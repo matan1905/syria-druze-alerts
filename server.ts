@@ -1,4 +1,37 @@
+// Load .env from project root (so REDALERT_API_KEY, VAPID_*, etc. are set)
+try {
+  const envPath = import.meta.dir + "/.env";
+  const file = Bun.file(envPath);
+  if (await file.exists()) {
+    const text = await file.text();
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        const eq = trimmed.indexOf("=");
+        if (eq > 0) {
+          const key = trimmed.slice(0, eq).trim();
+          let value = trimmed.slice(eq + 1).trim();
+          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+            value = value.slice(1, -1);
+          if (!(key in process.env)) process.env[key] = value;
+        }
+      }
+    }
+  }
+} catch {}
+
 const BASE_URL = "https://redalert.orielhaim.com";
+
+// Optional: Red Alert stats API now requires a key (see redalert.md). Get one via the dashboard.
+const REDALERT_API_KEY = process.env.REDALERT_API_KEY || "";
+
+function redAlertFetch(url: string): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (REDALERT_API_KEY) {
+    headers["Authorization"] = `Bearer ${REDALERT_API_KEY}`;
+  }
+  return fetch(url, { headers });
+}
 
 // ---------------------------------------------------------------------------
 // VAPID / Web Push helpers (no third-party libraries)
@@ -421,8 +454,8 @@ const state: AlertState = {
 };
 
 const NEWS_FLASH_WINDOW_MS = 20 * 60 * 1000;
-const GOLAN_SEARCH = "גולן";
-const GOLAN_ZONES = ["גולן", "רמת הגולן", "גליל עליון"];
+const ALERT_AUTO_CLEAR_MS = 5 * 60 * 1000; // return to normal after 5 min in alert
+const GOLAN_ZONES = ["רמת הגולן"];
 
 // Track what we last pushed so we don't spam
 let lastPushedLevel: string = "none";
@@ -432,21 +465,42 @@ const PUSH_COOLDOWN_MS = 60 * 1000; // don't re-push same level within 60s
 // ---------------------------------------------------------------------------
 // Polling logic
 // ---------------------------------------------------------------------------
+function runAutoClear() {
+  if (
+    state.activeAlert !== "none" &&
+    state.activeAlertTime &&
+    Date.now() - state.activeAlertTime > ALERT_AUTO_CLEAR_MS
+  ) {
+    console.log(`[${new Date().toISOString()}] ✅ Alert auto-cleared`);
+    state.activeAlert = "none";
+    state.activeAlertTime = null;
+    lastPushedLevel = "none";
+  }
+  if (
+    state.lastNewsFlashTime !== null &&
+    Date.now() - state.lastNewsFlashTime > NEWS_FLASH_WINDOW_MS
+  ) {
+    state.lastNewsFlashTime = null;
+  }
+}
+
 async function pollAlerts() {
   try {
     const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const now = new Date().toISOString();
 
     const allUrl = `${BASE_URL}/api/stats/history?startDate=${encodeURIComponent(twoMinAgo)}&endDate=${encodeURIComponent(now)}&limit=100&order=desc&sort=timestamp`;
-    const allRes = await fetch(allUrl);
+    const allRes = await redAlertFetch(allUrl);
     if (!allRes.ok) {
       state.error = `API error: ${allRes.status}`;
+      state.lastPollTime = Date.now();
+      runAutoClear();
       return;
     }
     const allData: HistoryResponse = await allRes.json();
 
     const golanUrl = `${BASE_URL}/api/stats/history?startDate=${encodeURIComponent(twoMinAgo)}&endDate=${encodeURIComponent(now)}&limit=100&order=desc&sort=timestamp&search=${encodeURIComponent(GOLAN_SEARCH)}`;
-    const golanRes = await fetch(golanUrl);
+    const golanRes = await redAlertFetch(golanUrl);
     const golanData: HistoryResponse = golanRes.ok
       ? await golanRes.json()
       : { data: [], pagination: { total: 0, limit: 100, offset: 0, hasMore: false } };
@@ -474,11 +528,12 @@ async function pollAlerts() {
 
       const isGolanRelevant = alert.cities.some((c) => {
         const name = c.name || "";
-        return GOLAN_ZONES.some((z) => name.includes(z)) || name.includes("גולן");
+        return GOLAN_ZONES.some((z) => name.includes(z));
       });
 
       if (alert.type === "newsFlash") {
         console.log(`[${new Date().toISOString()}] 📰 newsFlash detected: ${alert.id}`);
+          console.log(alert)
         state.lastNewsFlashTime = alertTime;
         state.activeAlert = "early";
         state.activeAlertTime = alertTime;
@@ -542,32 +597,20 @@ async function pollAlerts() {
       }
     }
 
-    // Auto-clear
-    if (
-      state.activeAlert !== "none" &&
-      state.activeAlertTime &&
-      Date.now() - state.activeAlertTime > 5 * 60 * 1000
-    ) {
-      console.log(`[${new Date().toISOString()}] ✅ Alert auto-cleared`);
-      state.activeAlert = "none";
-      state.activeAlertTime = null;
-      lastPushedLevel = "none";
-    }
-
-    if (
-      state.lastNewsFlashTime !== null &&
-      Date.now() - state.lastNewsFlashTime > NEWS_FLASH_WINDOW_MS
-    ) {
-      state.lastNewsFlashTime = null;
-    }
+    runAutoClear();
   } catch (err: any) {
     state.error = `Poll error: ${err.message}`;
+    state.lastPollTime = Date.now();
+    runAutoClear();
     console.error(`[${new Date().toISOString()}] ❌ Poll error:`, err);
   }
 }
 
 setInterval(pollAlerts, 5000);
 pollAlerts();
+
+// Run auto-clear on a fixed interval so we return to normal even if API polling hangs
+setInterval(runAutoClear, 60 * 1000);
 
 // ---------------------------------------------------------------------------
 // Bun HTTP Server
@@ -646,40 +689,29 @@ Bun.serve({
       state.activeAlertTime = null;
       lastPushedLevel = "none";
       return new Response(JSON.stringify({ ok: true }), {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-store",
+        },
       });
     }
 
-    // --- API: test ---
-    if (url.pathname === "/api/test") {
-      const type = url.searchParams.get("type") || "full";
-      state.activeAlert = type === "early" ? "early" : "full";
-      state.activeAlertTime = Date.now();
-      console.log(`[${new Date().toISOString()}] 🧪 TEST alert: ${state.activeAlert}`);
+    // /api/test endpoint removed for production
 
-      // Also send a push for testing
-      if (subscriptions.length > 0) {
-        const payload =
-          state.activeAlert === "full"
-            ? {
-                title: "🧪 اختبار: صواريخ!",
-                body: "هذا اختبار — لا يوجد خطر حقيقي",
-                bodyHe: "בדיקה — אין סכנה אמיתית",
-                level: "full",
-              }
-            : {
-                title: "🧪 اختبار: إنذار مبكر",
-                body: "هذا اختبار — لا يوجد خطر חقيقي",
-                bodyHe: "בדיקה — אין סכנה אמיתית",
-                level: "early",
-              };
-        broadcastPush(payload);
-      }
-
-      return new Response(
-        JSON.stringify({ ok: true, alert: state.activeAlert, subscribers: subscriptions.length }),
-        { headers: { "Content-Type": "application/json" } }
-      );
+    // --- Dynamic PNG icon generation (from SVG) ---
+    if (url.pathname === "/icon-192.png" || url.pathname === "/icon-512.png") {
+      const size = url.pathname.includes("192") ? 192 : 512;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="${size}" height="${size}">
+        <rect width="512" height="512" rx="80" fill="#0a1628"/>
+        <circle cx="256" cy="240" r="140" fill="none" stroke="#e74c3c" stroke-width="24"/>
+        <circle cx="256" cy="240" r="50" fill="#e74c3c"/>
+        <rect x="240" y="380" width="32" height="60" rx="8" fill="#e74c3c"/>
+        <rect x="240" y="450" width="32" height="32" rx="8" fill="#e74c3c"/>
+      </svg>`;
+      return new Response(svg, {
+        headers: { "Content-Type": "image/svg+xml" },
+      });
     }
 
     // --- Serve static files ---
@@ -701,12 +733,10 @@ Bun.serve({
 
 console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║  🛡️  Suwayda Alert System — Running                        ║
-║  🌐  http://localhost:${Number(process.env.PORT) || 3000}                                  ║
-║  📡  Polling RedAlert API every 5 seconds                   ║
-║  🔔  Push notifications: ${subscriptions.length} subscribers                    ║
-║  🎯  Monitoring: רמת הגולן (Golan Heights)                  ║
-║                                                              ║
-║  Test:  /api/test?type=full   (also sends push)              ║
+║  🛡️  Suwayda Alert System — Running                          ║
+║  🌐  http://localhost:${Number(process.env.PORT) || 3000}    ║
+║  📡  Polling RedAlert API every 5 seconds                    ║
+║  🔔  Push notifications: ${subscriptions.length} subscribers ║
+║  🎯  Monitoring: רמת הגולן (Golan Heights)                   ║
 ╚══════════════════════════════════════════════════════════════╝
 `);

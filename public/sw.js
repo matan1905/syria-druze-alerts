@@ -1,15 +1,65 @@
 // Service Worker — handles push notifications and click-to-open
 
+const CACHE_NAME = 'suwayda-alert-v1';
+const OFFLINE_URLS = ['/', '/index.html', '/manifest.json', '/icon.svg'];
+
+// Install — pre-cache essential files so app works offline
 self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(OFFLINE_URLS);
+    })
+  );
   self.skipWaiting();
 });
 
+// Activate — clean old caches
 self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+      );
+    })
+  );
   e.waitUntil(clients.claim());
 });
 
+// Fetch — network-first for API, cache-first for static
+self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
+
+  // Never cache API calls
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  e.respondWith(
+    fetch(e.request)
+      .then((res) => {
+        // Update cache with fresh response
+        if (res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        }
+        return res;
+      })
+      .catch(() => {
+        // Offline — serve from cache
+        return caches.match(e.request).then((cached) => {
+          return cached || caches.match('/');
+        });
+      })
+  );
+});
+
+// Push notification received
 self.addEventListener('push', (e) => {
-  let data = { title: '🚨 Alert', body: 'Check the alert system', level: 'full' };
+  let data = {
+    title: '🚨 تحذير',
+    body: 'تحقق من نظام الإنذار',
+    level: 'full',
+  };
 
   try {
     if (e.data) {
@@ -23,42 +73,34 @@ self.addEventListener('push', (e) => {
 
   const level = data.level || 'full';
 
-  // Notification options vary by alert level
   const options = {
-    body: data.body,
-    icon: level === 'full' ? undefined : undefined, // no icon file needed
-    badge: undefined,
-    tag: 'suwayda-alert-' + level, // replaces previous same-level notif
+    body: data.body + (data.bodyHe ? '\n' + data.bodyHe : ''),
+    tag: 'suwayda-alert-' + level,
     renotify: true,
-    requireInteraction: true, // stays until dismissed
-    vibrate: level === 'full'
-      ? [500, 200, 500, 200, 500, 200, 1000, 300, 500, 200, 500, 200, 500]
-      : [300, 200, 300],
+    requireInteraction: true,
+    vibrate:
+      level === 'full'
+        ? [500, 200, 500, 200, 500, 200, 1000, 300, 500, 200, 500, 200, 500]
+        : [300, 200, 300],
+    silent: false,
     data: {
       url: self.registration.scope,
       level: level,
       timestamp: Date.now(),
     },
-    // Show action buttons
     actions: [
-      { action: 'open', title: level === 'full' ? '🚨 فتح التطبيق' : '⚠️ فتح التطبيق' },
-      { action: 'dismiss', title: '✓ تم الاطلاع' },
+      {
+        action: 'open',
+        title: level === 'full' ? '🚨 افتح' : '⚠️ افتح',
+      },
+      { action: 'dismiss', title: '✓ حسناً' },
     ],
-    // Use a silent notification — we let the vibrate pattern handle it
-    silent: false,
   };
 
-  // Add Arabic/Hebrew body lines
-  if (data.bodyHe) {
-    options.body += '\n' + data.bodyHe;
-  }
-
-  e.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
+  e.waitUntil(self.registration.showNotification(data.title, options));
 });
 
-// Click handler — open or focus the app
+// Notification click — open or focus the app
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
 
@@ -69,15 +111,15 @@ self.addEventListener('notificationclick', (e) => {
   const urlToOpen = e.notification.data?.url || '/';
 
   e.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Focus existing tab if found
-      for (const client of windowClients) {
-        if (client.url.includes(urlToOpen) && 'focus' in client) {
-          return client.focus();
+    clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((windowClients) => {
+        for (const client of windowClients) {
+          if (new URL(client.url).pathname === '/' && 'focus' in client) {
+            return client.focus();
+          }
         }
-      }
-      // Otherwise open new tab
-      return clients.openWindow(urlToOpen);
-    })
+        return clients.openWindow(urlToOpen);
+      })
   );
 });

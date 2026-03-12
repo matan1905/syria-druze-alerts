@@ -33,6 +33,10 @@ cd suwayda-alert
 # (Optional) install dev types
 bun install
 
+# Red Alert stats API requires an API key (401 without it). See redalert.md.
+# Get a key via https://redalert.orielhaim.com/docs then:
+export REDALERT_API_KEY="your-key"
+
 # Start the server
 bun run server.ts
 ```
@@ -55,5 +59,5 @@ On the UI:
 ## Important Notes
 
 - **Do NOT rely solely on this system.** Always use all official warning channels available to you.
-- This project depends on the public RedAlert API provided by Oriel Haim: [`https://redalert.orielhaim.com`](https://redalert.orielhaim.com).
+- This project depends on the RedAlert API ([`https://redalert.orielhaim.com`](https://redalert.orielhaim.com)). The stats/history endpoint requires an API key; set `REDALERT_API_KEY` in the environment. See `redalert.md` for details.
 

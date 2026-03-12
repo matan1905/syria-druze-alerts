@@ -3,9 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+  <!-- PWA meta tags — critical for iOS -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="إنذار السويداء" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <title>تحذير صواريخ — السويداء | התראת טילים — סוויידא</title>
+  <meta name="theme-color" content="#0a1628" />
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+
+  <title>تحذير صواريخ — السويداء</title>
   <style>
     * {
       margin: 0;
@@ -24,25 +34,20 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Arabic',
-        'Noto Sans Hebrew', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Arabic', Roboto, sans-serif;
       background: var(--bg-safe);
       color: var(--text-primary);
       min-height: 100vh;
       min-height: 100dvh;
       transition: background 0.3s;
       overflow-x: hidden;
+      /* Prevent pull-to-refresh on mobile which disrupts the app */
+      overscroll-behavior-y: contain;
     }
 
-    body.alert-early {
-      background: var(--bg-early);
-    }
+    body.alert-early { background: var(--bg-early); }
+    body.alert-full { background: var(--bg-full); }
 
-    body.alert-full {
-      background: var(--bg-full);
-    }
-
-    /* ---- Flashing overlay for full alert ---- */
     .flash-overlay {
       display: none;
       position: fixed;
@@ -51,31 +56,80 @@
       pointer-events: none;
       animation: flash 0.5s infinite;
     }
-
-    body.alert-full .flash-overlay {
-      display: block;
-    }
+    body.alert-full .flash-overlay { display: block; }
 
     @keyframes flash {
       0%, 100% { background: rgba(231, 76, 60, 0.0); }
       50% { background: rgba(231, 76, 60, 0.25); }
     }
 
-    /* ---- Header ---- */
     .header {
       text-align: center;
-      padding: 20px;
+      padding: 16px 20px;
       border-bottom: 1px solid rgba(255,255,255,0.1);
     }
+    .header h1 { font-size: 1.3rem; margin-bottom: 4px; }
+    .header .subtitle { font-size: 0.8rem; opacity: 0.6; }
 
-    .header h1 {
-      font-size: 1.4rem;
-      margin-bottom: 4px;
+    /* ---- Install Banner (A2HS) ---- */
+    .install-banner {
+      display: none;
+      margin: 12px 16px;
+      padding: 14px 18px;
+      background: linear-gradient(135deg, rgba(46,204,113,0.15), rgba(46,204,113,0.05));
+      border: 1.5px solid rgba(46,204,113,0.4);
+      border-radius: 14px;
+      text-align: center;
+      font-size: 0.9rem;
+      line-height: 1.6;
     }
-
-    .header .subtitle {
+    .install-banner.show { display: block; }
+    .install-banner .install-title {
+      font-weight: 800;
+      font-size: 1.05rem;
+      margin-bottom: 6px;
+      color: #2ecc71;
+    }
+    .install-banner .install-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+      text-align: right;
       font-size: 0.85rem;
-      opacity: 0.6;
+    }
+    .install-banner .install-step .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(46,204,113,0.2);
+      font-weight: 800;
+      font-size: 0.8rem;
+      color: #2ecc71;
+    }
+    .install-btn {
+      margin-top: 10px;
+      padding: 10px 24px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: 2px solid #2ecc71;
+      background: rgba(46,204,113,0.15);
+      color: #2ecc71;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .install-dismiss {
+      margin-top: 8px;
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      border: none;
+      background: transparent;
+      color: rgba(255,255,255,0.3);
+      cursor: pointer;
+      text-decoration: underline;
     }
 
     /* ---- Status Section ---- */
@@ -84,20 +138,12 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 40px 20px;
-      min-height: 50vh;
+      padding: 30px 20px;
+      min-height: 45vh;
       text-align: center;
     }
-
-    .status-icon {
-      font-size: 6rem;
-      margin-bottom: 20px;
-      line-height: 1;
-    }
-
-    body.alert-full .status-icon {
-      animation: shake 0.3s infinite;
-    }
+    .status-icon { font-size: 5rem; margin-bottom: 16px; line-height: 1; }
+    body.alert-full .status-icon { animation: shake 0.3s infinite; }
 
     @keyframes shake {
       0%, 100% { transform: translateX(0); }
@@ -105,358 +151,415 @@
       75% { transform: translateX(8px); }
     }
 
-    .status-text-ar {
-      font-size: 2.2rem;
-      font-weight: 800;
-      margin-bottom: 8px;
-      direction: rtl;
-    }
-
-    .status-text-he {
-      font-size: 1.6rem;
-      font-weight: 700;
-      margin-bottom: 8px;
-      direction: rtl;
-      opacity: 0.85;
-    }
-
-    .status-text-en {
-      font-size: 1.2rem;
-      font-weight: 600;
-      opacity: 0.7;
-      direction: ltr;
-    }
+    .status-text-ar { font-size: 2rem; font-weight: 800; margin-bottom: 6px; direction: rtl; }
 
     .status-instructions {
-      margin-top: 24px;
-      padding: 16px 24px;
+      margin-top: 20px;
+      padding: 14px 20px;
       border-radius: 12px;
       background: rgba(255,255,255,0.05);
       max-width: 500px;
-      font-size: 1rem;
+      font-size: 0.95rem;
       line-height: 1.8;
     }
 
-    /* Alert-level colors */
     .safe { color: var(--accent-safe); }
     .early { color: var(--accent-early); }
     .full { color: var(--accent-full); }
 
-    /* ---- Dismiss button ---- */
     .dismiss-btn {
       display: none;
-      margin-top: 30px;
-      padding: 14px 40px;
-      font-size: 1.1rem;
+      margin-top: 24px;
+      padding: 12px 36px;
+      font-size: 1rem;
       font-weight: 700;
-      border: none;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
       border-radius: 8px;
       cursor: pointer;
-      color: #fff;
-      background: rgba(255,255,255,0.15);
-      border: 2px solid rgba(255,255,255,0.3);
-      transition: background 0.2s;
     }
-
-    .dismiss-btn:hover {
-      background: rgba(255,255,255,0.25);
-    }
-
     body.alert-early .dismiss-btn,
-    body.alert-full .dismiss-btn {
-      display: inline-block;
+    body.alert-full .dismiss-btn { display: inline-block; }
+
+    /* ---- Push notification button ---- */
+    .push-section {
+      text-align: center;
+      padding: 16px 20px;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    .push-btn {
+      padding: 14px 24px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: 2px solid rgba(46,204,113,0.5);
+      background: rgba(46,204,113,0.1);
+      color: #2ecc71;
+      border-radius: 10px;
+      cursor: pointer;
+      width: 100%;
+      max-width: 400px;
+      transition: all 0.2s;
+      line-height: 1.5;
+    }
+    .push-btn:hover { background: rgba(46,204,113,0.2); }
+    .push-btn.subscribed {
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.05);
+      color: #aaa;
+    }
+    .push-btn.unsupported {
+      border-color: rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.02);
+      color: #666;
+      cursor: default;
+    }
+    .push-status {
+      font-size: 0.8rem;
+      margin-top: 8px;
+      opacity: 0.6;
+      line-height: 1.5;
     }
 
     /* ---- Info bar ---- */
     .info-bar {
       display: flex;
       justify-content: center;
-      gap: 24px;
+      gap: 20px;
       padding: 12px;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       opacity: 0.5;
       flex-wrap: wrap;
     }
-
-    .info-bar .dot {
+    .dot {
       display: inline-block;
-      width: 8px;
-      height: 8px;
+      width: 8px; height: 8px;
       border-radius: 50%;
-      margin-left: 6px;
+      margin-left: 5px;
       vertical-align: middle;
     }
-
     .dot.green { background: var(--accent-safe); }
     .dot.yellow { background: var(--accent-early); }
     .dot.red { background: var(--accent-full); }
 
-    /* ---- Recent alerts log ---- */
-    .log-section {
-      padding: 20px;
-      max-width: 700px;
-      margin: 0 auto;
-    }
-
-    .log-section h2 {
-      font-size: 1rem;
-      margin-bottom: 12px;
-      opacity: 0.7;
-      text-align: center;
-    }
-
+    /* ---- Log ---- */
+    .log-section { padding: 16px 20px; max-width: 700px; margin: 0 auto; }
+    .log-section h2 { font-size: 0.95rem; margin-bottom: 10px; opacity: 0.7; text-align: center; }
     .log-entry {
-      padding: 10px 14px;
-      margin-bottom: 6px;
+      padding: 8px 12px;
+      margin-bottom: 5px;
       background: rgba(255,255,255,0.04);
       border-radius: 8px;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       direction: rtl;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
     }
-
-    .log-entry .type-badge {
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      font-weight: 700;
-    }
-
+    .type-badge { padding: 2px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; }
     .type-badge.missiles { background: rgba(231,76,60,0.3); color: #e74c3c; }
     .type-badge.newsFlash { background: rgba(243,156,18,0.3); color: #f39c12; }
     .type-badge.other { background: rgba(255,255,255,0.1); color: #aaa; }
 
-    /* ---- Test buttons ---- */
+    /* ---- Test ---- */
     .test-controls {
       text-align: center;
-      padding: 20px;
+      padding: 16px;
       border-top: 1px solid rgba(255,255,255,0.05);
-      margin-top: 20px;
+      margin-top: 16px;
     }
-
     .test-controls button {
-      padding: 8px 16px;
-      margin: 4px;
+      padding: 7px 14px;
+      margin: 3px;
       border: 1px solid rgba(255,255,255,0.2);
       background: transparent;
       color: #ccc;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 0.8rem;
-    }
-
-    .test-controls button:hover {
-      background: rgba(255,255,255,0.1);
-    }
-
-    /* ---- Wake lock indicator ---- */
-    .wake-lock-status {
-      position: fixed;
-      top: 8px;
-      left: 8px;
-      font-size: 0.7rem;
-      opacity: 0.4;
-      direction: ltr;
+      font-size: 0.75rem;
     }
 
     /* ---- Footer ---- */
     .footer {
       text-align: center;
-      padding: 20px;
-      font-size: 0.75rem;
+      padding: 16px;
+      font-size: 0.7rem;
       opacity: 0.3;
+      direction: rtl;
+    }
+    .footer a { color: inherit; text-decoration: underline; }
+
+    .wake-lock-status {
+      position: fixed;
+      top: 6px; left: 6px;
+      font-size: 0.65rem;
+      opacity: 0.35;
       direction: ltr;
     }
 
-    .footer a {
-      color: inherit;
-      text-decoration: underline;
-    }
-
-    /* ---- Responsive ---- */
-    @media (max-width: 480px) {
-      .status-text-ar { font-size: 1.6rem; }
-      .status-text-he { font-size: 1.2rem; }
-      .status-text-en { font-size: 1rem; }
-      .status-icon { font-size: 4rem; }
-    }
-
-    /* ---- Push notification UI ---- */
-    .push-section {
+    /* ---- Sound unlock banner (must tap to enable alerts) ---- */
+    .sound-unlock-banner {
+      display: block;
+      margin: 0 16px 20px;
+      padding: 28px 24px;
+      background: linear-gradient(135deg, rgba(243,156,18,0.25), rgba(243,156,18,0.1));
+      border: 3px solid rgba(243,156,18,0.7);
+      border-radius: 16px;
       text-align: center;
-      padding: 16px 20px;
-      margin: 0 auto;
-      max-width: 500px;
-    }
-
-    .push-btn {
-      padding: 14px 28px;
-      font-size: 1rem;
-      font-weight: 700;
-      border: 2px solid rgba(46, 204, 113, 0.5);
-      background: rgba(46, 204, 113, 0.1);
-      color: #2ecc71;
-      border-radius: 10px;
       cursor: pointer;
-      transition: all 0.2s;
-      width: 100%;
-      max-width: 400px;
+      direction: rtl;
+      box-shadow: 0 4px 20px rgba(243,156,18,0.2);
+      animation: sound-banner-pulse 2s ease-in-out infinite;
+    }
+    .sound-unlock-banner:hover {
+      background: linear-gradient(135deg, rgba(243,156,18,0.35), rgba(243,156,18,0.15));
+      border-color: #f39c12;
+    }
+    .sound-unlock-banner:active {
+      transform: scale(0.98);
+    }
+    .sound-unlock-banner.hidden {
+      display: none !important;
+    }
+    @keyframes sound-banner-pulse {
+      0%, 100% { box-shadow: 0 4px 20px rgba(243,156,18,0.2); }
+      50% { box-shadow: 0 4px 28px rgba(243,156,18,0.4); }
+    }
+    .sound-unlock-banner .sound-unlock-title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #f39c12;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+    .sound-unlock-banner .sound-unlock-sub {
+      font-size: 0.95rem;
+      opacity: 0.9;
+      color: #e0e0e0;
+    }
+    @media (max-width: 480px) {
+      .sound-unlock-banner .sound-unlock-title { font-size: 1.35rem; }
+      .sound-unlock-banner { padding: 24px 20px; }
     }
 
-    .push-btn:hover {
-      background: rgba(46, 204, 113, 0.2);
-    }
-
-    .push-btn.subscribed {
-      border-color: rgba(255,255,255,0.2);
-      background: rgba(255,255,255,0.05);
-      color: #aaa;
-    }
-
-    .push-status {
-      font-size: 0.8rem;
-      margin-top: 8px;
-      opacity: 0.6;
+    @media (max-width: 480px) {
+      .status-text-ar { font-size: 1.5rem; }
+      .status-icon { font-size: 3.5rem; }
     }
   </style>
 </head>
 <body>
   <div class="flash-overlay"></div>
-
-  <div class="wake-lock-status" id="wakeLockStatus">⏳ Wake Lock: checking...</div>
+  <div class="wake-lock-status" id="wakeLockStatus">⏳</div>
 
   <div class="header">
     <h1>🛡️ نظام إنذار مبكر — السويداء</h1>
-    <div class="subtitle">מערכת התראה מוקדמת לקהילה הדרוזית בסוויידא, סוריה</div>
+    <div class="subtitle">نظام إنذار مبكر للطائفة الدرزية في السويداء، سوريا</div>
+  </div>
+
+  <!-- Sound unlock: one tap required by browsers to allow alert sound -->
+  <div class="sound-unlock-banner" id="soundUnlockBanner" onclick="unlockSound()" role="button" tabindex="0">
+    <div class="sound-unlock-title">🔊 الرجاء الضغط هنا لبدء الاستماع للتنبيهات</div>
+    <div class="sound-unlock-sub">مطلوب ضغطة واحدة لتفعيل صوت الإنذار</div>
+  </div>
+
+  <!-- A2HS install banner -->
+  <div class="install-banner" id="installBanner">
+    <div class="install-title">📲 أضف التطبيق لشاشتك الرئيسية لتلقي التنبيهات</div>
+    <div id="installInstructions"></div>
+    <button class="install-btn" id="installBtn" style="display:none;" onclick="installPWA()">
+      📲 تثبيت التطبيق
+    </button>
+    <br/>
+    <button class="install-dismiss" onclick="dismissInstall()">لاحقاً</button>
   </div>
 
   <div class="status-container" id="statusContainer">
     <div class="status-icon" id="statusIcon">✅</div>
     <div class="status-text-ar safe" id="statusAr">الوضع آمن</div>
-    <div class="status-text-he safe" id="statusHe">המצב בטוח</div>
-    <div class="status-text-en safe" id="statusEn">All Clear</div>
-
     <div class="status-instructions" id="instructions">
       <div style="margin-bottom:8px">🕌 يتم مراقبة التحذيرات في منطقة الجولان على مدار الساعة</div>
       <div style="margin-bottom:8px">🔔 في حالة وجود تحذير مسبق (إنذار مبكر) يليه صواريخ — يعني هجوم إيراني</div>
       <div>🏠 عند سماع صفارة الإنذار: ادخل فوراً إلى أقرب مكان محمي</div>
     </div>
-
     <button class="dismiss-btn" id="dismissBtn" onclick="dismissAlert()">
-      ✓ تم الاطلاع — الإغلاق | סגירה
+      ✓ تم الاطلاع — الإغلاق
     </button>
   </div>
 
-  <!-- Push Notification Section -->
+  <!-- Push subscription -->
   <div class="push-section">
     <button class="push-btn" id="pushBtn" onclick="togglePush()">
-      🔔 فعّل الإشعارات — تلقي تنبيهات حتى لو كان التطبيق مغلقاً
-      <br/><small style="opacity:0.7">הפעל התראות — קבל התרעות גם כשהאפליקציה סגורה</small>
+      🔔 فعّل الإشعارات — تنبيهات حتى لو كان التطبيق مغلقاً
     </button>
     <div class="push-status" id="pushStatus"></div>
   </div>
 
   <div class="info-bar">
-    <span><span class="dot green"></span> آمن / בטוח</span>
-    <span><span class="dot yellow"></span> إنذار مبكر / התראה מוקדמת</span>
-    <span><span class="dot red"></span> صواريخ! / טילים!</span>
+    <span><span class="dot green"></span> آمن</span>
+    <span><span class="dot yellow"></span> إنذار مبكر</span>
+    <span><span class="dot red"></span> صواريخ!</span>
     <span id="pollInfo">⏱ ...</span>
   </div>
 
   <div class="log-section">
-    <h2>آخر التنبيهات — התראות אחרונות</h2>
+    <h2>آخر التنبيهات</h2>
     <div id="logEntries">
-      <div class="log-entry" style="opacity:0.4; justify-content:center;">لا توجد تنبيهات حديثة — אין התראות אחרונות</div>
+      <div class="log-entry" style="opacity:0.4;justify-content:center;">لا توجد تنبيهات حديثة</div>
     </div>
   </div>
 
-  <div class="test-controls">
-    <span style="opacity:0.5;font-size:0.75rem;">Test / בדיקה:</span><br/>
-    <button onclick="testAlert('early')">⚠️ Early Warning</button>
-    <button onclick="testAlert('full')">🚨 Full Siren</button>
-    <button onclick="enableSound()">🔊 Enable Sound</button>
-  </div>
-
   <div class="footer">
-    <p>Data: <a href="https://redalert.orielhaim.com" target="_blank">RedAlert by Oriel Haim</a></p>
-    <p style="margin-top:4px">Built with ❤️ for the Druze community in Suwayda</p>
-    <p style="margin-top:4px">⚠️ Do NOT rely solely on this — use all available official channels</p>
+    <p>⚠️ لا تعتمد على هذا التطبيق وحده — استخدم جميع القنوات الرسمية المتاحة</p>
   </div>
 
   <script>
-    // ====================================================================
-    // Audio — we generate siren sounds using Web Audio API (no files needed)
-    // ====================================================================
+    // ================================================================
+    // Platform detection
+    // ================================================================
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isAndroid = /Android/.test(navigator.userAgent);
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+    // ================================================================
+    // A2HS (Add to Home Screen) install prompt
+    // ================================================================
+    let deferredPrompt = null;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      showInstallBanner('chrome');
+    });
+
+    function showInstallBanner(type) {
+      if (isStandalone) return; // Already installed
+      if (localStorage.getItem('install-dismissed')) return;
+
+      const banner = document.getElementById('installBanner');
+      const instructions = document.getElementById('installInstructions');
+      const btn = document.getElementById('installBtn');
+
+      if (type === 'chrome' && deferredPrompt) {
+        // Android Chrome — can use native prompt
+        btn.style.display = 'inline-block';
+        instructions.innerHTML = `
+          <div class="install-step"><span class="num">1</span> اضغط على "تثبيت التطبيق" أدناه</div>
+          <div class="install-step"><span class="num">2</span> وافق على التثبيت</div>
+          <div class="install-step"><span class="num">3</span> افتح التطبيق من الشاشة الرئيسية</div>
+        `;
+      } else if (isIOS) {
+        // iOS Safari — manual instructions
+        btn.style.display = 'none';
+        instructions.innerHTML = `
+          <div class="install-step"><span class="num">1</span> اضغط على <strong style="font-size:1.2em">⎙</strong> (مشاركة) في الأسفل</div>
+          <div class="install-step"><span class="num">2</span> مرر للأسفل واضغط <strong>"إضافة إلى الشاشة الرئيسية"</strong></div>
+          <div class="install-step"><span class="num">3</span> اضغط <strong>"إضافة"</strong></div>
+          <div style="margin-top:8px;font-size:0.8rem;opacity:0.7;">
+            ⚠️ يجب فتح التطبيق من الشاشة الرئيسية لتعمل الإشعارات على iPhone
+          </div>
+        `;
+      } else {
+        // Other — generic
+        btn.style.display = 'none';
+        instructions.innerHTML = `
+          <div class="install-step"><span class="num">•</span> افتح قائمة المتصفح واختر "تثبيت" أو "إضافة إلى الشاشة الرئيسية"</div>
+        `;
+      }
+
+      banner.classList.add('show');
+    }
+
+    async function installPWA() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log('Install prompt outcome:', outcome);
+      deferredPrompt = null;
+      document.getElementById('installBanner').classList.remove('show');
+    }
+
+    function dismissInstall() {
+      document.getElementById('installBanner').classList.remove('show');
+      localStorage.setItem('install-dismissed', '1');
+    }
+
+    // Show iOS instructions automatically if not standalone
+    if (isIOS && !isStandalone) {
+      setTimeout(() => showInstallBanner('ios'), 1500);
+    }
+
+    // ================================================================
+    // Audio (Web Audio API — no files)
+    // ================================================================
     let audioCtx = null;
     let sirenNode = null;
-    let sirenGain = null;
     let soundEnabled = false;
+    let sirenTimeout = null;
 
     function ensureAudioCtx() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
     }
 
     function enableSound() {
       ensureAudioCtx();
       soundEnabled = true;
-      // Play a tiny beep to confirm
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
-      osc.connect(g);
-      g.connect(audioCtx.destination);
-      osc.frequency.value = 800;
-      g.gain.value = 0.1;
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.15);
-      console.log('Sound enabled');
+      osc.connect(g); g.connect(audioCtx.destination);
+      osc.frequency.value = 800; g.gain.value = 0.1;
+      osc.start(); osc.stop(audioCtx.currentTime + 0.15);
     }
 
     function startSiren(type) {
       if (!soundEnabled) return;
       stopSiren();
       ensureAudioCtx();
-
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      osc.connect(gain); gain.connect(audioCtx.destination);
 
       if (type === 'full') {
-        // Classic air raid siren — sweeping frequency
+        // Short, strong siren burst (~4 seconds)
         osc.type = 'sawtooth';
         osc.frequency.value = 400;
-        // Sweep up and down
         const now = audioCtx.currentTime;
-        for (let i = 0; i < 60; i++) {
-          osc.frequency.setValueAtTime(400, now + i * 4);
-          osc.frequency.linearRampToValueAtTime(800, now + i * 4 + 2);
-          osc.frequency.linearRampToValueAtTime(400, now + i * 4 + 4);
-        }
+        osc.frequency.setValueAtTime(400, now);
+        osc.frequency.linearRampToValueAtTime(800, now + 2);
+        osc.frequency.linearRampToValueAtTime(400, now + 4);
         gain.gain.value = 0.35;
       } else {
-        // Early warning — pulsing tone
+        // A few early-warning pulses (~4.5 seconds)
         osc.type = 'sine';
         osc.frequency.value = 600;
         gain.gain.value = 0;
         const now = audioCtx.currentTime;
-        for (let i = 0; i < 120; i++) {
-          gain.gain.setValueAtTime(0.0, now + i * 1.5);
-          gain.gain.linearRampToValueAtTime(0.2, now + i * 1.5 + 0.2);
-          gain.gain.setValueAtTime(0.2, now + i * 1.5 + 0.8);
-          gain.gain.linearRampToValueAtTime(0.0, now + i * 1.5 + 1.0);
+        const pulses = 3;
+        for (let i = 0; i < pulses; i++) {
+          const base = now + i * 1.5;
+          gain.gain.setValueAtTime(0.0, base);
+          gain.gain.linearRampToValueAtTime(0.2, base + 0.2);
+          gain.gain.setValueAtTime(0.2, base + 0.8);
+          gain.gain.linearRampToValueAtTime(0.0, base + 1.0);
         }
       }
-
       osc.start();
       sirenNode = osc;
-      sirenGain = gain;
+
+      // Hard-stop siren shortly after (covers both types)
+      const SIREN_DURATION_MS = 5000;
+      if (sirenTimeout) {
+        clearTimeout(sirenTimeout);
+      }
+      sirenTimeout = setTimeout(() => {
+        stopSiren();
+      }, SIREN_DURATION_MS);
     }
 
     function stopSiren() {
@@ -464,242 +567,70 @@
         try { sirenNode.stop(); } catch(e) {}
         sirenNode = null;
       }
-      if (sirenGain) {
-        sirenGain = null;
+      if (sirenTimeout) {
+        clearTimeout(sirenTimeout);
+        sirenTimeout = null;
       }
     }
 
-    // ====================================================================
-    // Wake Lock — keeps screen on
-    // ====================================================================
+    // ================================================================
+    // Wake Lock
+    // ================================================================
     let wakeLock = null;
-
     async function requestWakeLock() {
       const el = document.getElementById('wakeLockStatus');
       try {
         if ('wakeLock' in navigator) {
           wakeLock = await navigator.wakeLock.request('screen');
-          el.textContent = '🟢 Wake Lock: active';
-          wakeLock.addEventListener('release', () => {
-            el.textContent = '🔴 Wake Lock: released';
-          });
+          el.textContent = '🟢 WL';
+          wakeLock.addEventListener('release', () => { el.textContent = '🔴 WL'; });
         } else {
-          el.textContent = '⚪ Wake Lock: not supported';
+          el.textContent = '';
         }
-      } catch (err) {
-        el.textContent = '🔴 Wake Lock: ' + err.message;
-      }
+      } catch { el.textContent = ''; }
     }
-
-    // Re-acquire on visibility change
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
+      if (document.visibilityState === 'visible') requestWakeLock();
     });
-
     requestWakeLock();
 
-    // ====================================================================
-    // NoSleep fallback — play silent audio to prevent sleep on mobile
-    // ====================================================================
-    let noSleepAudio = null;
-
-    function startNoSleepAudio() {
-      if (noSleepAudio) return;
-      ensureAudioCtx();
-      // Create a nearly-silent oscillator that runs forever
-      const osc = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      osc.connect(g);
-      g.connect(audioCtx.destination);
-      osc.frequency.value = 1; // 1 Hz — inaudible
-      g.gain.value = 0.001;    // nearly silent
-      osc.start();
-      noSleepAudio = osc;
-    }
-
-    // ====================================================================
-    // Polling + UI updates
-    // ====================================================================
-    let currentAlertLevel = 'none';
-    const POLL_INTERVAL = 3000; // client polls server every 3s
-
-    async function poll() {
-      try {
-        const res = await fetch('/api/state', { cache: 'no-store' });
-        const state = await res.json();
-        updateUI(state);
-      } catch (err) {
-        console.error('Poll error:', err);
-        document.getElementById('pollInfo').textContent = '❌ Connection error';
-      }
-    }
-
-    function updateUI(state) {
-      const body = document.body;
-      const icon = document.getElementById('statusIcon');
-      const ar = document.getElementById('statusAr');
-      const he = document.getElementById('statusHe');
-      const en = document.getElementById('statusEn');
-      const instructions = document.getElementById('instructions');
-      const pollInfo = document.getElementById('pollInfo');
-
-      // Update poll info
-      if (state.lastPollTime) {
-        const ago = Math.round((Date.now() - state.lastPollTime) / 1000);
-        pollInfo.textContent = `⏱ آخر فحص: ${ago}s`;
-      }
-      if (state.error) {
-        pollInfo.textContent = `❌ ${state.error}`;
-      }
-
-      const level = state.activeAlert || 'none';
-
-      // Only change sounds when level changes
-      if (level !== currentAlertLevel) {
-        currentAlertLevel = level;
-
-        body.classList.remove('alert-early', 'alert-full');
-
-        if (level === 'full') {
-          body.classList.add('alert-full');
-          icon.textContent = '🚨';
-          ar.textContent = '🔴 صواريخ! ادخل إلى الملجأ فوراً!';
-          ar.className = 'status-text-ar full';
-          he.textContent = '🔴 טילים! היכנסו למרחב מוגן!';
-          he.className = 'status-text-he full';
-          en.textContent = '🔴 MISSILES — TAKE SHELTER NOW';
-          en.className = 'status-text-en full';
-          instructions.innerHTML = `
-            <div style="font-size:1.3rem;font-weight:800;margin-bottom:12px;color:#e74c3c;">
-              ⚠️ هجوم صاروخي إيراني محتمل ⚠️
-            </div>
-            <div style="margin-bottom:8px">🏃 ادخل فوراً إلى أقرب ملجأ أو غرفة محمية</div>
-            <div style="margin-bottom:8px">🚪 ابتعد عن النوافذ والجدران الخارجية</div>
-            <div style="margin-bottom:8px">📻 استمع إلى التعليمات الرسمية</div>
-            <div style="margin-bottom:8px;color:#e74c3c;font-weight:700">
-              תקיפה איראנית אפשרית — היכנסו למרחב מוגן!
-            </div>
-          `;
-          startSiren('full');
-
-          // Vibrate if available
-          if ('vibrate' in navigator) {
-            navigator.vibrate([500, 200, 500, 200, 500, 200, 500]);
-          }
-
-        } else if (level === 'early') {
-          body.classList.add('alert-early');
-          icon.textContent = '⚠️';
-          ar.textContent = '🟡 إنذار مبكر — كن مستعداً';
-          ar.className = 'status-text-ar early';
-          he.textContent = '🟡 התראה מוקדמת — היו מוכנים';
-          he.className = 'status-text-he early';
-          en.textContent = '🟡 EARLY WARNING — STAY ALERT';
-          en.className = 'status-text-en early';
-          instructions.innerHTML = `
-            <div style="margin-bottom:8px">📰 تم الكشف عن إنذار مبكر (خبر عاجل)</div>
-            <div style="margin-bottom:8px">⏳ إذا تبعه هجوم صاروخي خلال 20 دقيقة — يعني هجوم إيراني</div>
-            <div style="margin-bottom:8px">🏠 جهّز نفسك بالقرب من مكان محمي</div>
-            <div style="margin-bottom:8px;opacity:0.7">
-              זוהתה התראה מוקדמת — אם יבואו טילים בעוד עד 20 דקות זה תקיפה איראנית
-            </div>
-          `;
-          startSiren('early');
-
-          if ('vibrate' in navigator) {
-            navigator.vibrate([300, 300, 300]);
-          }
-
-        } else {
-          icon.textContent = '✅';
-          ar.textContent = 'الوضع آمن';
-          ar.className = 'status-text-ar safe';
-          he.textContent = 'המצב בטוח';
-          he.className = 'status-text-he safe';
-          en.textContent = 'All Clear';
-          en.className = 'status-text-en safe';
-          instructions.innerHTML = `
-            <div style="margin-bottom:8px">🕌 يتم مراقبة التحذيرات في منطقة الجولان على مدار الساعة</div>
-            <div style="margin-bottom:8px">🔔 في حالة وجود تحذير مسبق (إنذار مبكر) يليه صواريخ — يعني هجوم إيراني</div>
-            <div>🏠 عند سماع صفارة الإنذار: ادخل فوراً إلى أقرب مكان محمي</div>
-          `;
-          stopSiren();
-        }
-      }
-
-      // Update log
-      updateLog(state.recentAlerts || []);
-    }
-
-    function updateLog(alerts) {
-      const container = document.getElementById('logEntries');
-      if (!alerts || alerts.length === 0) {
-        container.innerHTML = `<div class="log-entry" style="opacity:0.4; justify-content:center;">لا توجد تنبيهات حديثة — אין התראות אחרונות</div>`;
-        return;
-      }
-
-      container.innerHTML = alerts.map(a => {
-        const time = new Date(a.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const date = new Date(a.timestamp).toLocaleDateString('he-IL');
-        const cities = (a.cities || []).map(c => c.name).join(', ') || '—';
-        const typeClass = a.type === 'missiles' ? 'missiles' : a.type === 'newsFlash' ? 'newsFlash' : 'other';
-        const origin = a.origin ? ` (${a.origin})` : '';
-
-        return `
-          <div class="log-entry">
-            <div>
-              <span class="type-badge ${typeClass}">${a.type}</span>${origin}
-              <span style="opacity:0.5;margin:0 6px">|</span>
-              <span>${cities}</span>
-            </div>
-            <div style="opacity:0.5;font-size:0.75rem;direction:ltr">${date} ${time}</div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    // ====================================================================
-    // Test & dismiss
-    // ====================================================================
-    async function testAlert(type) {
-      enableSound();
-      startNoSleepAudio();
-      await fetch(`/api/test?type=${type}`);
-    }
-
-    async function dismissAlert() {
-      stopSiren();
-      await fetch('/api/dismiss', { method: 'POST' });
-    }
-
-    // ====================================================================
-    // Auto-enable sound on first interaction
-    // ====================================================================
-    let interacted = false;
-    function onFirstInteraction() {
-      if (interacted) return;
-      interacted = true;
-      enableSound();
-      startNoSleepAudio();
-      document.removeEventListener('click', onFirstInteraction);
-      document.removeEventListener('touchstart', onFirstInteraction);
-    }
-    document.addEventListener('click', onFirstInteraction);
-    document.addEventListener('touchstart', onFirstInteraction);
-
-    // ====================================================================
+    // ================================================================
     // Push Notifications
-    // ====================================================================
+    // ================================================================
     let pushSubscription = null;
+
+    function isPushSupported() {
+      if (!('serviceWorker' in navigator)) return false;
+      if (!('PushManager' in window)) return false;
+      if (!('Notification' in window)) return false;
+      return true;
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(base64);
+      const arr = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+      return arr;
+    }
 
     async function togglePush() {
       const btn = document.getElementById('pushBtn');
       const status = document.getElementById('pushStatus');
 
+      if (!isPushSupported()) {
+        if (isIOS && !isStandalone) {
+          status.textContent = '⚠️ على iPhone: أضف التطبيق للشاشة الرئيسية أولاً ثم افتحه من هناك';
+          showInstallBanner('ios');
+        } else {
+          status.textContent = '❌ المتصفح لا يدعم الإشعارات';
+        }
+        return;
+      }
+
+      // Unsubscribe if already subscribed
       if (pushSubscription) {
-        // Unsubscribe
         try {
           await fetch('/api/push/unsubscribe', {
             method: 'POST',
@@ -708,109 +639,238 @@
           });
           await pushSubscription.unsubscribe();
           pushSubscription = null;
-          btn.textContent = '🔔 فعّل الإشعارات — تلقي تنبيهات حتى لو كان التطبيق مغلقاً';
+          btn.textContent = '🔔 فعّل الإشعارات — تنبيهات حتى لو كان التطبيق مغلقاً';
           btn.classList.remove('subscribed');
-          status.textContent = 'تم إلغاء الاشتراك — Notifications disabled';
-        } catch (err) {
-          status.textContent = '❌ Error: ' + err.message;
-        }
+          status.textContent = 'تم إلغاء الاشتراك';
+        } catch (err) { status.textContent = '❌ ' + err.message; }
         return;
       }
 
       // Subscribe
       try {
-        // 1. Check support
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-          status.textContent = '❌ المتصفح لا يدعم الإشعارات — Browser does not support push';
-          return;
-        }
-
-        // 2. Request notification permission
         const perm = await Notification.requestPermission();
         if (perm !== 'granted') {
-          status.textContent = '❌ تم رفض الإذن — Permission denied. Enable in browser settings.';
+          status.textContent = '❌ تم رفض الإذن. فعّل الإشعارات من إعدادات المتصفح';
           return;
         }
-
         status.textContent = '⏳ جاري التسجيل...';
 
-        // 3. Register service worker
-        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-        await navigator.serviceWorker.ready;
-
-        // 4. Get VAPID public key from server
+        const reg = await navigator.serviceWorker.ready;
         const keyRes = await fetch('/api/vapid-public-key');
         const { key: vapidKey } = await keyRes.json();
 
-        // Convert base64url to Uint8Array for subscribe()
-        function urlBase64ToUint8Array(base64String) {
-          const padding = '='.repeat((4 - base64String.length % 4) % 4);
-          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-          const rawData = atob(base64);
-          const outputArray = new Uint8Array(rawData.length);
-          for (let i = 0; i < rawData.length; i++) {
-            outputArray[i] = rawData.charCodeAt(i);
-          }
-          return outputArray;
-        }
-
-        // 5. Subscribe to push
         pushSubscription = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidKey),
         });
 
-        // 6. Send subscription to our server
         const subJson = pushSubscription.toJSON();
         const saveRes = await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            endpoint: subJson.endpoint,
-            keys: subJson.keys,
-          }),
+          body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys }),
         });
 
         if (saveRes.ok) {
-          btn.innerHTML = '🔕 إلغاء الإشعارات — الإشعارات مفعّلة ✓<br/><small style="opacity:0.7">התראות פעילות — לחץ לביטול</small>';
+          btn.textContent = '🔕 الإشعارات مفعّلة ✓ — اضغط للإلغاء';
           btn.classList.add('subscribed');
-          status.textContent = '✅ ستتلقى إشعارات حتى لو كان التطبيق مغلقاً — Push active!';
+          status.textContent = '✅ ستتلقى إشعارات حتى لو أغلقت التطبيق';
         } else {
-          status.textContent = '❌ Server error — try again';
+          status.textContent = '❌ خطأ في الخادم';
         }
       } catch (err) {
-        console.error('Push subscribe error:', err);
-        status.textContent = '❌ ' + err.message;
+        console.error('Push error:', err);
+        if (isIOS && !isStandalone) {
+          status.textContent = '⚠️ على iPhone: أضف التطبيق للشاشة الرئيسية أولاً';
+          showInstallBanner('ios');
+        } else {
+          status.textContent = '❌ ' + err.message;
+        }
       }
     }
 
-    // Check existing subscription on page load
+    // Check existing subscription on load
     async function checkExistingPush() {
       const btn = document.getElementById('pushBtn');
+      const status = document.getElementById('pushStatus');
+
+      if (!isPushSupported()) {
+        if (isIOS && !isStandalone) {
+          btn.textContent = '📲 أضف للشاشة الرئيسية أولاً لتفعيل الإشعارات';
+          btn.classList.add('unsupported');
+          btn.onclick = () => showInstallBanner('ios');
+        } else if (!isIOS) {
+          // Might still work — don't disable yet
+        }
+        return;
+      }
+
       try {
-        if ('serviceWorker' in navigator && 'PushManager' in window) {
-          const reg = await navigator.serviceWorker.getRegistration('/');
-          if (reg) {
-            const sub = await reg.pushManager.getSubscription();
-            if (sub) {
-              pushSubscription = sub;
-              btn.innerHTML = '🔕 إلغاء الإشعارات — الإشعارات مفعّلة ✓<br/><small style="opacity:0.7">התראות פעילות — לחץ לביטול</small>';
-              btn.classList.add('subscribed');
-              document.getElementById('pushStatus').textContent = '✅ الإشعارات مفعّلة — Push active';
-            }
+        const reg = await navigator.serviceWorker.getRegistration('/');
+        if (reg) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            pushSubscription = sub;
+            btn.textContent = '🔕 الإشعارات مفعّلة ✓ — اضغط للإلغاء';
+            btn.classList.add('subscribed');
+            status.textContent = '✅ الإشعارات مفعّلة';
+
+            // Re-send to server in case it restarted
+            const subJson = sub.toJSON();
+            fetch('/api/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys }),
+            });
           }
         }
-      } catch (e) {
-        // Ignore
+      } catch (e) { /* ignore */ }
+    }
+
+    // ================================================================
+    // Register SW early
+    // ================================================================
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then((reg) => {
+          console.log('SW registered, scope:', reg.scope);
+          checkExistingPush();
+        })
+        .catch((err) => console.error('SW registration failed:', err));
+    } else {
+      checkExistingPush();
+    }
+
+    // ================================================================
+    // Polling + UI
+    // ================================================================
+    let currentAlertLevel = 'none';
+    let lastAlertTime = null;
+
+    async function poll() {
+      try {
+        const res = await fetch('/api/state', { cache: 'no-store' });
+        const state = await res.json();
+        updateUI(state);
+      } catch (err) {
+        document.getElementById('pollInfo').textContent = '❌';
       }
     }
 
-    checkExistingPush();
+    function updateUI(state) {
+      const body = document.body;
+      const icon = document.getElementById('statusIcon');
+      const ar = document.getElementById('statusAr');
+      const instructions = document.getElementById('instructions');
+      const pollInfo = document.getElementById('pollInfo');
 
-    // ====================================================================
+      if (state.lastPollTime) {
+        const ago = Math.round((Date.now() - state.lastPollTime) / 1000);
+        pollInfo.textContent = `⏱ ${ago}s`;
+      }
+
+      const level = state.activeAlert || 'none';
+      const alertTime = state.activeAlertTime || null;
+
+      // Re-trigger visuals + sound when either:
+      // - level changes (none ↔ early/full, early ↔ full, etc.)
+      // - or a new alert arrives at the same level (changed timestamp)
+      if (level !== currentAlertLevel || alertTime !== lastAlertTime) {
+        currentAlertLevel = level;
+        lastAlertTime = alertTime;
+        body.classList.remove('alert-early', 'alert-full');
+
+        if (level === 'full') {
+          body.classList.add('alert-full');
+          icon.textContent = '🚨';
+          ar.textContent = '🔴 صواريخ! ادخل إلى الملجأ فوراً!';
+          ar.className = 'status-text-ar full';
+          instructions.innerHTML = `
+            <div style="font-size:1.2rem;font-weight:800;margin-bottom:10px;color:#e74c3c;">⚠️ هجوم صاروخي إيراني محتمل ⚠️</div>
+            <div style="margin-bottom:8px">🏃 ادخل فوراً إلى أقرب ملجأ أو غرفة محمية</div>
+            <div>🚪 ابتعد عن النوافذ والجدران الخارجية</div>`;
+          startSiren('full');
+          if ('vibrate' in navigator) navigator.vibrate([500,200,500,200,500,200,500]);
+          document.querySelector('meta[name="theme-color"]').content = '#e74c3c';
+        } else if (level === 'early') {
+          body.classList.add('alert-early');
+          icon.textContent = '⚠️';
+          ar.textContent = '🟡 إنذار مبكر — كن مستعداً';
+          ar.className = 'status-text-ar early';
+          instructions.innerHTML = `
+            <div style="margin-bottom:8px">📰 تم الكشف عن إنذار مبكر</div>
+            <div style="margin-bottom:8px">⏳ إذا تبعه صواريخ خلال 20 دقيقة — يعني هجوم إيراني</div>
+            <div>🏠 جهّز نفسك بالقرب من مكان محمي</div>`;
+          startSiren('early');
+          if ('vibrate' in navigator) navigator.vibrate([300,300,300]);
+          document.querySelector('meta[name="theme-color"]').content = '#f39c12';
+        } else {
+          icon.textContent = '✅';
+          ar.textContent = 'الوضع آمن'; ar.className = 'status-text-ar safe';
+          instructions.innerHTML = `
+            <div style="margin-bottom:8px">🕌 يتم مراقبة التحذيرات على مدار الساعة</div>
+            <div style="margin-bottom:8px">🔔 إنذار مبكر + صواريخ = هجوم إيراني</div>
+            <div>🏠 عند الإنذار: ادخل فوراً لمكان محمي</div>`;
+          stopSiren();
+          document.querySelector('meta[name="theme-color"]').content = '#0a1628';
+        }
+      }
+      updateLog(state.recentAlerts || []);
+    }
+
+    function updateLog(alerts) {
+      const c = document.getElementById('logEntries');
+      if (!alerts.length) {
+        c.innerHTML = '<div class="log-entry" style="opacity:0.4;justify-content:center;">لا توجد تنبيهات حديثة</div>';
+        return;
+      }
+      c.innerHTML = alerts.map(a => {
+        const t = new Date(a.timestamp);
+        const time = t.toLocaleTimeString('ar',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const date = t.toLocaleDateString('ar');
+        const cities = (a.cities||[]).map(c=>c.name).join(', ')||'—';
+        const tc = a.type==='missiles'?'missiles':a.type==='newsFlash'?'newsFlash':'other';
+        return `<div class="log-entry"><div><span class="type-badge ${tc}">${a.type}</span> ${cities}</div><div style="opacity:0.5;font-size:0.7rem;direction:ltr">${date} ${time}</div></div>`;
+      }).join('');
+    }
+    async function dismissAlert() {
+      stopSiren();
+      const res = await fetch('/api/dismiss', { method: 'POST' });
+      if (res.ok) {
+        // Refetch state immediately so UI returns to safe without waiting for next poll
+        poll();
+      }
+    }
+
+    // Sound unlock: banner click or any first tap enables audio (required by browsers)
+    let interacted = false;
+    function unlockSound() {
+      if (interacted) return;
+      interacted = true;
+      enableSound();
+      var banner = document.getElementById('soundUnlockBanner');
+      if (banner) banner.classList.add('hidden');
+      document.removeEventListener('click', onFirstInteraction);
+      document.removeEventListener('touchstart', onFirstInteraction);
+    }
+    function onFirstInteraction() {
+      if (interacted) return;
+      interacted = true;
+      enableSound();
+      var banner = document.getElementById('soundUnlockBanner');
+      if (banner) banner.classList.add('hidden');
+      document.removeEventListener('click', onFirstInteraction);
+      document.removeEventListener('touchstart', onFirstInteraction);
+    }
+    document.addEventListener('click', onFirstInteraction);
+    document.addEventListener('touchstart', onFirstInteraction);
+    // Allow activating from keyboard (Enter/Space) for accessibility
+    document.getElementById('soundUnlockBanner').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); unlockSound(); }
+    });
+
     // Start polling
-    // ====================================================================
-    setInterval(poll, POLL_INTERVAL);
+    setInterval(poll, 3000);
     poll();
   </script>
 </body>
