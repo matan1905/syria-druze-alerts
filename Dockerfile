@@ -10,10 +10,14 @@ RUN bun install --production
 COPY server.ts ./server.ts
 COPY public ./public
 
+# Data directory for subscriptions (no .env file in prod)
+ENV NODE_ENV=production
+ENV DATA_DIR=/data
+RUN mkdir -p /data
 
 EXPOSE 3000
 
-# Allow mounting the app directory for config/code overrides
-VOLUME ["/app"]
+# Persist only data (env, subscriptions, etc.)
+VOLUME ["/data"]
 
 CMD ["bun", "run", "server.ts"]

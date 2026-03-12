@@ -1,24 +1,34 @@
-// Load .env from project root (so REDALERT_API_KEY, VAPID_*, etc. are set)
-try {
-  const envPath = import.meta.dir + "/.env";
-  const file = Bun.file(envPath);
-  if (await file.exists()) {
-    const text = await file.text();
-    for (const line of text.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#")) {
+// Central data directory (for subscriptions, etc.)
+const DATA_DIR = process.env.DATA_DIR || import.meta.dir + "/data";
+
+// In non-production (local dev), load .env from project root
+if (process.env.NODE_ENV !== "production") {
+  try {
+    const envPath = import.meta.dir + "/.env";
+    const file = Bun.file(envPath);
+    const exists = await file.exists();
+    if (exists) {
+      const text = await file.text();
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
         const eq = trimmed.indexOf("=");
-        if (eq > 0) {
-          const key = trimmed.slice(0, eq).trim();
-          let value = trimmed.slice(eq + 1).trim();
-          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
-            value = value.slice(1, -1);
-          if (!(key in process.env)) process.env[key] = value;
+        if (eq <= 0) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1);
         }
+        if (!(key in process.env)) process.env[key] = value;
       }
     }
+  } catch {
+    // Ignore local .env errors; rely on real env vars
   }
-} catch {}
+}
 
 const BASE_URL = "https://redalert.orielhaim.com";
 
@@ -348,14 +358,19 @@ async function sendPush(subscription: PushSubscription, payload: object): Promis
 // ---------------------------------------------------------------------------
 // Subscription storage (in-memory + file persistence)
 // ---------------------------------------------------------------------------
-const SUBS_FILE = import.meta.dir + "/subscriptions.json";
+const SUBS_FILE = DATA_DIR + "/subscriptions.json";
 let subscriptions: PushSubscription[] = [];
 
 function loadSubscriptions() {
   try {
-    const file = Bun.file(SUBS_FILE);
-    if (file.size > 0) {
-      const data = JSON.parse(require("fs").readFileSync(SUBS_FILE, "utf-8"));
+    const fs = require("fs");
+    const path = require("path");
+    const dir = path.dirname(SUBS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (fs.existsSync(SUBS_FILE) && fs.statSync(SUBS_FILE).size > 0) {
+      const data = JSON.parse(fs.readFileSync(SUBS_FILE, "utf-8"));
       subscriptions = Array.isArray(data) ? data : [];
       console.log(`[Push] Loaded ${subscriptions.length} subscriptions from disk`);
     }
@@ -366,7 +381,13 @@ function loadSubscriptions() {
 
 function saveSubscriptions() {
   try {
-    require("fs").writeFileSync(SUBS_FILE, JSON.stringify(subscriptions, null, 2));
+    const fs = require("fs");
+    const path = require("path");
+    const dir = path.dirname(SUBS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(SUBS_FILE, JSON.stringify(subscriptions, null, 2));
   } catch (err: any) {
     console.error("[Push] Failed to save subscriptions:", err.message);
   }
@@ -499,21 +520,10 @@ async function pollAlerts() {
     }
     const allData: HistoryResponse = await allRes.json();
 
-    const golanUrl = `${BASE_URL}/api/stats/history?startDate=${encodeURIComponent(twoMinAgo)}&endDate=${encodeURIComponent(now)}&limit=100&order=desc&sort=timestamp&search=${encodeURIComponent(GOLAN_SEARCH)}`;
-    const golanRes = await redAlertFetch(golanUrl);
-    const golanData: HistoryResponse = golanRes.ok
-      ? await golanRes.json()
-      : { data: [], pagination: { total: 0, limit: 100, offset: 0, hasMore: false } };
-
     state.lastPollTime = Date.now();
     state.error = null;
 
-    const combined = new Map<number, AlertRecord>();
-    for (const a of [...allData.data, ...golanData.data]) {
-      combined.set(a.id, a);
-    }
-
-    const sorted = [...combined.values()].sort(
+    const sorted = [...allData.data].sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
 
