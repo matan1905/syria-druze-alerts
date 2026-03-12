@@ -10,8 +10,6 @@ RUN bun install --production
 COPY server.ts ./server.ts
 COPY public ./public
 
-# Environment configuration
-ENV REDALERT_API_KEY=""
 
 EXPOSE 3000
 
